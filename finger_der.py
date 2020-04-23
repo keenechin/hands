@@ -30,58 +30,6 @@ def pt_h(point_list):
     return np.array(homogenous_arr)
 
 
-#%%
-@njit
-def kinematics_builder(v_kinematic_parameters):
-    n_points = len(v_kinematic_parameters)+1
-    v_points0 = np.zeros((n_points,3))
-    v_frames = np.zeros((n_points,3,3))
-    for i in range(n_points):
-        pass
-    return v_frames
-
-
-
-# %%
-@njit
-def nodes_from_morphology(v_morphology_parameters):
-    n_nodes = len(v_morphology_parameters)
-    node_params = np.zeros((n_nodes,2)) #phi/u s/u
-    for i in range(n_nodes):
-        node_params[i,:] = 0
-
-
-# %%
-def setup():
-    rect = patches.Rectangle((0.5,0.5),0.1,0.1,color = 'r')
-    return rect
-
-
-def update_rect(frame,viewport,rect):
-    x,y = rect.get_xy()
-    x+= -0.01+random.random()/50
-    y+= -0.01+random.random()/50
-    rect.set_xy((x,y))
-    viewport.add_patch(rect)
-    return rect,
-
- #%%   
-v_compliance = np.array([[0,2,0,4,0]]).T
-v_max_phi = np.array([[0,90,0,90,0]]).T
-
-v_morphology_parameters = np.hstack((v_compliance,v_max_phi))
-
-u = 0
-
-#%%
-lengths = [30,10,31,11,32]
-n_rods = len(lengths)
-n_points = n_rods+1
-#%%
-tf_params0 = np.zeros((n_rods,2))
-tf_params0[:,1] = lengths
-
-#%%
 def get_matrices(tf_params):
     mats = []
     for param in tf_params:
@@ -91,14 +39,6 @@ def get_matrices(tf_params):
         mats.append(mat)
     mats = np.array(mats)
     return mats
-
-mats = get_matrices(tf_params0)
-#get initial set of points based on initial parameters
-points0 = pt_h([(0,0)])
-pt = points0[0]
-for mat in mats:
-    pt = mat@pt
-    points0 = np.append(points0,np.array([pt]),axis=0)
 
 
 def draw_lines(ax,points):
@@ -118,19 +58,10 @@ def draw_lines(ax,points):
         ax.add_line(line)
     ax.set_xlim(min(x)-10,max(x)+10)
     ax.set_ylim(min(y)-10,max(y)+10)
+    ax.axis('equal')
     return line_artists
     
 
-
-
-def transform_points(matrices,points):
-    updated_points = np.zeros_like(points)
-    while True:
-        for i,mat in enumerate(matrices):
-            for j,point in enumerate(points[i:,:]):
-                u_pt = mat@point
-                updated_points[j,:] = u_pt
-        yield updated_points
 
 def update_frame(points,ax,line_artists):
     updated_line_artists = []
@@ -145,39 +76,71 @@ def update_frame(points,ax,line_artists):
         updated_line_artists.append(line)
     all_x = np.array(all_x).flatten()
     all_y = np.array(all_y).flatten()
-    ax.set_xlim(min(all_x)-10,max(all_x)+10)
-    ax.set_ylim(min(all_y)-10,max(all_y)+10)
 
+
+    updated_line_artists[1],updated_line_artists[4] = updated_line_artists[4],updated_line_artists[1]#put red joint at end so it is drawn on top
     return updated_line_artists
 
+def transform_points(points0,theta1=0,theta2=0):
+    end_tf = get_matrices([[0,0],[theta1,0],[theta1,0],[theta2,0],[theta2,0]]) 
+
+    updated_points = points0
+
+    for i,mat in enumerate(end_tf):
+        frame_origin = updated_points[i,:]
+        for j,point in enumerate(updated_points[i:,:]):
+            adjusted_point = point-frame_origin
+            u_pt = mat@adjusted_point
+            updated_points[i+j,:] = u_pt+frame_origin
+    return updated_points
+
+def theta_frames(points0,u_start = 0, u_end = 1, n_frames = 600):
+    assert(u_end>u_start)
+    for u in np.linspace(u_start,u_end,n_frames):
+        kappa1 = 2*u/1000
+        kappa2 = 4*u/1000
+        o1 = 2*np.tan(kappa1/2)
+        o2 = 2*np.tan(kappa2/2)
+        points = transform_points(points0,theta1=o1,theta2=o2)
+        yield points
+
+#%%
 
 
 #%%
+lengths = [30,10,31,11,32]
+total_length = sum(lengths)
+n_rods = len(lengths)
+n_points = n_rods+1
+tf_params0 = np.zeros((n_rods,2))
+tf_params0[:,1] = lengths
+mats = get_matrices(tf_params0)
+
+#get initial config of nodes
+points0 = pt_h([(0,0)])
+pt = points0[0]
+for mat in mats:
+    pt = mat@pt
+    points0 = np.append(points0,np.array([pt]),axis=0)
+
+
+
 fig = plt.figure()
 viewport = fig.add_axes([0,0,1,1],frameon=False,label ="viewport",facecolor = 'k')
-viewport.xaxis.set_visible(False)
-viewport.yaxis.set_visible(False)
-
-end_tf = get_matrices([[0,0],[np.pi/4,0],[np.pi/4,0],[np.pi/4,0],[np.pi/4,0]]) 
-updated_points = points0
-
-for i,mat in enumerate(end_tf):
-    print(mat)
-    frame_origin = updated_points[i,:]
-    print(frame_origin)
-    for j,point in enumerate(updated_points[i:,:]):
-        adjusted_point = point-frame_origin
-        u_pt = mat@adjusted_point
-        updated_points[i+j,:] = u_pt+frame_origin
-draw_lines0 = partial(draw_lines,viewport,updated_points)
-draw_lines0()
+viewport.xaxis.set_visible(True)
+viewport.yaxis.set_visible(True)
+bound = total_length+10
+print(bound)
+viewport.set_xlim(-bound,bound)
+viewport.set_ylim(-bound,bound)
+draw_lines0 = partial(draw_lines,viewport,points0)
 
 # %%
-fps = 1
+fps = 20
 writer = animation.writers['ffmpeg']
 writer = writer(fps = 30, metadata=dict(artist='Keene Chin'), bitrate=10000)
-#ani = animation.FuncAnimation(fig,func=update_frame,interval=1000//fps,init_func=draw_lines0,frames=transform_points(mats,points0),blit=True,fargs=[viewport,draw_lines0()])
-#ani.save('./test2.mp4', writer=writer)
+ani = animation.FuncAnimation(fig,func=update_frame,interval=1000//fps,init_func=draw_lines0,frames=theta_frames(points0),blit=True,fargs=[viewport,draw_lines0()])
+ani.save('./fing.mp4', writer=writer)
 plt.show()
 # %%
 
