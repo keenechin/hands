@@ -1,9 +1,6 @@
 #%%
 import numpy as np
-from itertools import count
 import random
-from numba import njit
-import der
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -21,14 +18,12 @@ def transform2d(rot_ang,trans_vec):
                        [0,  0,  1]])
     return frame
 
-
 def pt_h(point_list):
     homogenous_arr = []
     for point in point_list:
         x,y = (point[0],point[1])
         homogenous_arr.append(np.array([[x,y,1]]).T)
     return np.array(homogenous_arr)
-
 
 def get_matrices(tf_params):
     mats = []
@@ -39,7 +34,6 @@ def get_matrices(tf_params):
         mats.append(mat)
     mats = np.array(mats)
     return mats
-
 
 def draw_lines(ax,points):
     line_artists = []
@@ -56,12 +50,10 @@ def draw_lines(ax,points):
     
     for line in [line_artists[i] for i in [0,2,4,1,3]]:
         ax.add_line(line)
-    ax.set_xlim(min(x)-10,max(x)+10)
-    ax.set_ylim(min(y)-10,max(y)+10)
-    ax.axis('equal')
+        
+
     return line_artists
     
-
 
 def update_frame(points,ax,line_artists):
     updated_line_artists = []
@@ -76,10 +68,12 @@ def update_frame(points,ax,line_artists):
         updated_line_artists.append(line)
     all_x = np.array(all_x).flatten()
     all_y = np.array(all_y).flatten()
-
-
+    end_segment = updated_line_artists[-1].get_xydata()
+    end_point = end_segment[1,:]
+    plt.scatter(end_point[0],end_point[1],c='g')
     updated_line_artists[1],updated_line_artists[4] = updated_line_artists[4],updated_line_artists[1]#put red joint at end so it is drawn on top
-    return updated_line_artists
+    line_artists = updated_line_artists
+    return line_artists
 
 def transform_points(points0,theta1=0,theta2=0):
     end_tf = get_matrices([[0,0],[theta1,0],[theta1,0],[theta2,0],[theta2,0]]) 
@@ -94,21 +88,25 @@ def transform_points(points0,theta1=0,theta2=0):
             updated_points[i+j,:] = u_pt+frame_origin
     return updated_points
 
-def theta_frames(points0,u_start = 0, u_end = 1, n_frames = 600):
+def theta_frames(points0,u_start = 0, u_end = 4, compl1=2, compl2=4, n_frames = 30):
     assert(u_end>u_start)
+    o1,o2 = 0,0
     for u in np.linspace(u_start,u_end,n_frames):
-        kappa1 = 2*u/1000
-        kappa2 = 4*u/1000
+        kappa1 = compl1*u/500
+        kappa2 = compl2*u/500
         o1 = 2*np.tan(kappa1/2)
         o2 = 2*np.tan(kappa2/2)
         points = transform_points(points0,theta1=o1,theta2=o2)
         yield points
 
-#%%
 
 
 #%%
-lengths = [30,10,31,11,32]
+total_length = 90
+l0 = 15
+l1 = (total_length - l0)/2
+l2 = l1
+lengths = [l0,10,l1,10,l2]
 total_length = sum(lengths)
 n_rods = len(lengths)
 n_points = n_rods+1
@@ -125,23 +123,24 @@ for mat in mats:
 
 
 
-fig = plt.figure()
-viewport = fig.add_axes([0,0,1,1],frameon=False,label ="viewport",facecolor = 'k')
-viewport.xaxis.set_visible(True)
-viewport.yaxis.set_visible(True)
+fig= plt.figure(frameon=False)
+viewport = fig.add_axes([0,0,1,1])
+viewport.xaxis.set_visible(False)
+viewport.yaxis.set_visible(False)
 bound = total_length+10
-print(bound)
+viewport.axis('equal')
 viewport.set_xlim(-bound,bound)
 viewport.set_ylim(-bound,bound)
 draw_lines0 = partial(draw_lines,viewport,points0)
-
+artists = draw_lines0()
 # %%
-fps = 20
+fps = 15
 writer = animation.writers['ffmpeg']
-writer = writer(fps = 30, metadata=dict(artist='Keene Chin'), bitrate=10000)
-ani = animation.FuncAnimation(fig,func=update_frame,interval=1000//fps,init_func=draw_lines0,frames=theta_frames(points0),blit=True,fargs=[viewport,draw_lines0()])
-ani.save('./fing.mp4', writer=writer)
-plt.show()
+writer = writer(fps = fps, metadata=dict(artist='Keene Chin'), bitrate=1000)
+compl1 = 2
+compl2 = 2
+ani = animation.FuncAnimation(fig,func=update_frame,interval=1000//fps,frames=theta_frames(points0,compl1=compl1,compl2=compl2),blit=True,fargs=[viewport,artists])
+ani.save('./finger_l{}_c{}_c{}.mp4'.format(l0,compl1,compl2), writer=writer)
 # %%
 
 
